@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name" translatable="false">AndroidChatGPT</string>
+    <string name="hello_world">Hello World</string>
+    <string name="goodbye_world">Goodbye World</string>
+    <string name="save_to_usb">Save To USB Drive</string>
+</resources>
