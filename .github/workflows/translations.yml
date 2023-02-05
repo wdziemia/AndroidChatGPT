@@ -35,6 +35,8 @@ jobs:
 
       # Runs our Translation script
       - name: Translations
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python ${GITHUB_WORKSPACE}/.github/scripts/translations.py
         shell: sh
 
