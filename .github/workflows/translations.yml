@@ -42,6 +42,6 @@ jobs:
 
       # Runs a single command using the runners shell
       - uses: stefanzweifel/git-auto-commit-action@v4
-          with:
-            commit_message: Add Translations
-            file_pattern: '*/strings.xml'
+        with:
+          commit_message: Add Translations
+          file_pattern: '*/strings.xml'
