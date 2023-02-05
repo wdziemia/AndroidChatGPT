@@ -29,6 +29,10 @@ jobs:
         with:
           python-version: 3.11
 
+      - name: Install dependencies
+        run: |
+          python -m pip install requests
+
       # Runs our Translation script
       - name: Translations
         run: python3 ${GITHUB_WORKSPACE}/.github/scripts/translations.py
