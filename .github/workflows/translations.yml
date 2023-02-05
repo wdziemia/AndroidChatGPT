@@ -43,5 +43,8 @@ jobs:
       # Runs a single command using the runners shell
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: Add Translations
+          commit_message: Adds Translations
+          commit_user_name: "Translations[Bot]" # defaults to "github-actions[bot]"
+          commit_author: Translations Bot <w@dziemia.com>
           file_pattern: '*/strings.xml'
+          token: ${{ secrets.GH_PAT }}
