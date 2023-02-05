@@ -110,7 +110,7 @@ for source_path in source_paths:
                 "frequency_penalty": 0.5,
                 "presence_penalty": 0,
             }
-            print(f"...Fetching {len(qualified_strings_needed)} for {qualifier_language[qualifier]} translations")
+            print(f"...Fetching {len(qualified_strings_needed)} {qualifier_language[qualifier]} translation(s)")
             json_response = requests.post(url, headers=headers, json=data)
             response_text = json_response.json()["choices"][0]["text"]
             response_strings = response_text.replace('\n\n', "").split('\n')
