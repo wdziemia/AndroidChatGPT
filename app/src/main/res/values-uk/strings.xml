@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources><string name="hello_world">Привіт Світ</string>
+    <string name="goodbye_world">До побачення Світ</string>
+    <string name="save_to_usb">Зберегти на USB-диску</string>
+</resources>
