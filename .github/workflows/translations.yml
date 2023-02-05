@@ -35,7 +35,7 @@ jobs:
 
       # Runs our Translation script
       - name: Translations
-        run: python3 ${GITHUB_WORKSPACE}/.github/scripts/translations.py
+        run: python ${GITHUB_WORKSPACE}/.github/scripts/translations.py
         shell: sh
 
       # Runs a single command using the runners shell
