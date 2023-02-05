@@ -8,8 +8,8 @@ import requests
 from xml.dom import minidom
 
 # Env Args
-OPENAI_API_KEY = os.environ['OPENAI_API_KEY']
-GITHUB_WORKSPACE = os.environ['GITHUB_WORKSPACE']
+GITHUB_WORKSPACE = os.environ.get('GITHUB_WORKSPACE')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
 # Parsing Args
 XML_ATTR_TRANSLATABLE = "translatable"
