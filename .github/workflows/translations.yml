@@ -25,9 +25,9 @@ jobs:
 
       # Setup Pythin Environment
       - name: "Set up python"
-          uses: actions/setup-python@v2
-          with:
-            python-version: 3.11
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.11
 
       # Runs our Translation script
       - name: Translations
