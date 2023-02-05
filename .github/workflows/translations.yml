@@ -22,6 +22,8 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v3
+        with:
+          - token: ${{ secrets.GH_PAT }}
 
       # Setup Pythin Environment
       - name: "Set up python"
@@ -47,4 +49,3 @@ jobs:
           commit_user_name: "Translations[Bot]" # defaults to "github-actions[bot]"
           commit_author: Translations Bot <w@dziemia.com>
           file_pattern: '*/strings.xml'
-          token: ${{ secrets.GH_PAT }}
