@@ -25,7 +25,7 @@ jobs:
 
       # Runs a single command using the runners shell
       - name: Translations
-        run: python3 translations.py
+        run: python3 ${GITHUB_WORKSPACE}/.github/scripts/translations.py
         shell: sh
       # Runs a single command using the runners shell
       - name: Check what files have changed
