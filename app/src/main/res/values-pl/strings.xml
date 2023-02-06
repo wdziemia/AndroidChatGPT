@@ -2,4 +2,5 @@
 <resources><string name="hello_world">Cześć Świecie</string>
     <string name="goodbye_world">Do widzenia Świecie</string>
     <string name="save_to_usb">Zapisz na dysku USB</string>
+<string name="save_to_disk">Zapisz na dysku</string>
 </resources>

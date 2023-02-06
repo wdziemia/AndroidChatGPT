@@ -2,4 +2,5 @@
 <resources><string name="hello_world">Привіт Світ</string>
     <string name="goodbye_world">До побачення Світ</string>
     <string name="save_to_usb">Зберегти на USB-диску</string>
+<string name="save_to_disk">Зберегти на диск</string>
 </resources>
