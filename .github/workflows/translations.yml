@@ -20,32 +20,33 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      # Checks-out your repository under $GITHUB_WORKSPACE, using a different token w/ read & write permissions
       - uses: actions/checkout@v3
         with:
           token: ${{ secrets.GH_PAT }}
 
-      # Setup Pythin Environment
-      - name: "Set up python"
+      # Setup Python Environment
+      - name: Set up python environment
         uses: actions/setup-python@v2
         with:
           python-version: 3.11
 
-      - name: Install dependencies
+      # Install the requests package to make HTTP requests in our script
+      - name: Install python dependencies
         run: |
           python -m pip install requests
 
       # Runs our Translation script
-      - name: Translations
+      - name: Run translations script
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python ${GITHUB_WORKSPACE}/.github/scripts/translations.py
         shell: sh
 
-      # Runs a single command using the runners shell
+      # Runs a git-auto-commit-action which will only commit files that match the defined file-pattern
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: Adds Translations
-          commit_user_name: "Translations[Bot]" # defaults to "github-actions[bot]"
+          commit_user_name: "Translations[Bot]"
           commit_author: Translations Bot <w@dziemia.com>
           file_pattern: '*/strings.xml'

@@ -15,19 +15,15 @@ OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 XML_ATTR_TRANSLATABLE = "translatable"
 XML_ATTR_NAME = "name"
 
-# Source Strings Dir
-STRINGS_SOURCE_PARENT_DIR = "values"
-
 # Associative Array which is the source of our languages
 qualifier_language = {
     "pl": "Polish",
-    "en-GB": "British English",
+    "en-rGB": "British English",
     "uk": "Ukrainian",
 }
 
 # Iterate through each source strings.xml file so the case where
-source_paths = pathlib.Path(GITHUB_WORKSPACE).glob(
-    '**/src/*/res/{source}/strings.xml'.format(source=STRINGS_SOURCE_PARENT_DIR))
+source_paths = pathlib.Path(GITHUB_WORKSPACE).glob('**/src/*/res/values/strings.xml')
 
 print("Starting Translations Script!")
 print("-------------------------------")
@@ -48,7 +44,7 @@ for source_path in source_paths:
 
     print("-------------------------------")
 
-    # Next, we check to see if languages
+    # Next, we check to see if each language exists
     res_directory = source_path.parent.parent
     for qualifier in qualifier_language.keys():
         qualified_values_folder_name = 'values-{qualifier}'.format(qualifier=qualifier)
@@ -61,14 +57,13 @@ for source_path in source_paths:
         # proceed to creating the file
         qualified_strings_remove = list()
         qualified_strings_needed = dict()
-        qualified_strings_to_add = list()
         qualified_strings_needed.update(source_strings)
         if qualified_strings_file_exists:
             strings_tree = ET.parse(qualified_strings_file_path)
             for qualified_string in strings_tree.getroot():
                 # Let's ignore the strings that are marked with translatable=false
                 if qualified_string.attrib.get(XML_ATTR_TRANSLATABLE) == "false":
-                    print("Ignoring: " + qualified_string.attrib.get(XML_ATTR_NAME))
+                    print(f"...⚠️ Ignoring values-{qualifier}/{child.attrib.get(XML_ATTR_NAME)} because it wasn't marked as translatable")
                     continue
 
                 # Now we check to see if this qualified file has the translation
@@ -89,6 +84,7 @@ for source_path in source_paths:
             new_strings_file.close()
 
         # It's time to request from OpenAI and get our translations!
+        qualified_strings_to_add = list()
         if len(qualified_strings_needed) != 0:
             # First we need our prompt, which will fetch a response for each language.
             prompt = "Translate each of these phrases, excluding punctuation unless present, into " + \
@@ -119,7 +115,7 @@ for source_path in source_paths:
             # The count isn't the best way of doing this, but sometimes life is like that.
             if len(filtered_response_strings) != len(qualified_strings_needed):
                 print(
-                    "Stopping translations for {qualifier}, OpenAI response returned {oai_count} item(s) but we "
+                    "...Stopping translations for {qualifier}, OpenAI response returned {oai_count} item(s) but we "
                     "expected {local_count}".format(
                         qualifier=qualifier,
                         oai_count=len(filtered_response_strings),
@@ -135,7 +131,7 @@ for source_path in source_paths:
                 print(
                     f"...Adding {qualified_strings_needed[qualified_string_needed_key].text} -> {qualified_string_copy.text}")
                 qualified_strings_to_add.append(qualified_string_copy)
-                index = index + 1
+                index += 1
 
         # Now lets move onto modifying the XML file.
         if len(qualified_strings_remove) > 0 or len(qualified_strings_needed) > 0:
