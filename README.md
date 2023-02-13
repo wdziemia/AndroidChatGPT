@@ -1,5 +1,6 @@
-Hello World!
+## Using OpenAI's Text Completion API for Android Translations
 
+This project is used for this [medium article](https://proandroiddev.com/using-openais-text-completion-api-for-android-translations-80846e03b9cb) which is as a high-level step-by-step guide on how we can setup a GitHub Actions Workflow to leverage OpenAI's Text Completion API to automate adding string translations for an Android App.
 
 ## License 
 
