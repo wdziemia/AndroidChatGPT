@@ -6,6 +6,7 @@ import copy
 import requests
 
 from xml.dom import minidom
+from itertools import islice
 
 # Env Args
 GITHUB_WORKSPACE = os.environ.get('GITHUB_WORKSPACE')
@@ -17,10 +18,107 @@ XML_ATTR_NAME = "name"
 
 # Associative Array which is the source of our languages
 qualifier_language = {
-    "pl": "Polish",
-    "en-rGB": "British English",
+#     "pl": "Polish",
+#     "en-rGB": "British English",
     "uk": "Ukrainian",
+    "ar": "Arabic",
+    "bg": "Bulgarian",
+    "da": "Danish",
+    "de": "German",
+    "el": "Greek",
+    "es": "Spanish",
+    "fi": "Finnish",
+    "fr": "French",
+    "hr": "Croatian",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "pt-rBR" : "Brazilian Portuguese",
+    "pt-rPT": "Portuguese",
+    "ro": "Romanian",
+    "ru": "Russian",
+    "tr": "Turkish",
+    "zh": "Chinese"
 }
+
+def chunks(data, SIZE=10000):
+   it = iter(data)
+   for i in range(0, len(data), SIZE):
+      yield {k:data[k] for k in islice(it, SIZE)}
+
+def tryChunk(strings_needed, language):
+    # First we need our prompt, which will fetch a response for each language.
+    prompt = "Translate each of these phrases, excluding punctuation unless present, into " + \
+             language
+    for qualified_string_needed_key in strings_needed:
+        prompt += "\n" + strings_needed[qualified_string_needed_key].text
+
+    url = "https://api.openai.com/v1/completions"
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": "Bearer " + OPENAI_API_KEY,
+    }
+    data = {
+        "model": "text-davinci-003",
+        "prompt": prompt,
+        "temperature": 0,
+        "max_tokens": 1024,
+        "top_p": 1,
+        "frequency_penalty": 0.5,
+        "presence_penalty": 0,
+    }
+    print(f"...Fetching {len(strings_needed)} {language} translation(s)")
+    json_response = requests.post(url, headers=headers, json=data)
+    response_text = json_response.json()["choices"][0]["text"]
+    response_strings = response_text.replace('\n\n', "").split('\n')
+    filtered_response_strings = list(filter(lambda string: len(string) > 0, response_strings))
+    if len(filtered_response_strings) != len(strings_needed):
+        print(f"Miss, {len(filtered_response_strings)} != {len(strings_needed)}, found {json_response.json()}")
+        if len(strings_needed) > 1:
+           in1 = dict(list(strings_needed.items())[len(strings_needed)//2:])
+           in2 = dict(list(strings_needed.items())[:len(strings_needed)//2])
+           out1 = tryChunk(in1, language)
+           out2 = tryChunk(in2, language)
+           return out1 + out2
+        else:
+            return filtered_response_strings
+    else:
+        insertString(filtered_response_strings, strings_needed)
+        return filtered_response_strings
+
+
+def insertString(strings_to_add, strings_needed):
+    print(f"{strings_to_add}, {strings_needed}")
+    index = 0
+    qualified_strings_to_add = list()
+
+    for qualified_string_needed_key in strings_needed:
+        qualified_string_needed = strings_needed[qualified_string_needed_key]
+        qualified_string_copy = copy.deepcopy(qualified_string_needed)
+        qualified_string_copy.text = strings_to_add[index].replace('\'', r'\'')
+        print(
+            f"...Adding {qualified_strings_needed[qualified_string_needed_key].text} -> {qualified_string_copy.text}")
+        qualified_strings_to_add.append(qualified_string_copy)
+        index += 1
+    # Now lets move onto modifying the XML file.
+    if len(strings_needed) > 0:
+        qualified_strings_tree = ET.parse(qualified_strings_file_path)
+        qualified_strings_root = qualified_strings_tree.getroot()
+
+        # Next lets add the elements we do want
+        for qualified_string in qualified_strings_to_add:
+            qualified_strings_root.append(qualified_string)
+
+        # Lastly, we write the changes to the file
+        print(f"...Writing changes to {str(qualified_strings_file_path)}")
+        qualified_strings_tree.write(
+            qualified_strings_file_path,
+            encoding="utf-8",
+            xml_declaration="utf-8",
+            method="xml"
+        )
 
 # Iterate through each source strings.xml file so the case where
 source_paths = pathlib.Path(GITHUB_WORKSPACE).glob('**/src/*/res/values/strings.xml')
@@ -84,78 +182,17 @@ for source_path in source_paths:
             new_strings_file.close()
 
         # It's time to request from OpenAI and get our translations!
-        qualified_strings_to_add = list()
+        filtered_response_strings = list()
         if len(qualified_strings_needed) != 0:
-            # First we need our prompt, which will fetch a response for each language.
-            prompt = "Translate each of these phrases, excluding punctuation unless present, into " + \
-                     qualifier_language[qualifier]
-            for qualified_string_needed_key in qualified_strings_needed:
-                prompt += "\n" + qualified_strings_needed[qualified_string_needed_key].text
+            for chunk in chunks(qualified_strings_needed, 16):
+                tryChunk(chunk, qualifier_language[qualifier])
 
-            url = "https://api.openai.com/v1/completions"
-            headers = {
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": "Bearer " + OPENAI_API_KEY,
-            }
-            data = {
-                "model": "text-davinci-003",
-                "prompt": prompt,
-                "temperature": 0,
-                "max_tokens": 60,
-                "top_p": 1,
-                "frequency_penalty": 0.5,
-                "presence_penalty": 0,
-            }
-            print(f"...Fetching {len(qualified_strings_needed)} {qualifier_language[qualifier]} translation(s)")
-            json_response = requests.post(url, headers=headers, json=data)
-            response_text = json_response.json()["choices"][0]["text"]
-            response_strings = response_text.replace('\n\n', "").split('\n')
-            filtered_response_strings = list(filter(lambda string: len(string) > 0, response_strings))
+        # First lets remove the elements we don't need
+        for qualified_string_to_remove in qualified_strings_remove:
+            for qualified_string in qualified_strings_root:
+                if qualified_string.attrib.get(XML_ATTR_NAME) == qualified_string_to_remove:
+                    qualified_strings_root.remove(qualified_string)
 
-            # The count isn't the best way of doing this, but sometimes life is like that.
-            if len(filtered_response_strings) != len(qualified_strings_needed):
-                print(
-                    "...Stopping translations for {qualifier}, OpenAI response returned {oai_count} item(s) but we "
-                    "expected {local_count}".format(
-                        qualifier=qualifier,
-                        oai_count=len(filtered_response_strings),
-                        local_count=len(qualified_strings_needed)
-                    ))
-                continue
-
-            index = 0
-            for qualified_string_needed_key in qualified_strings_needed:
-                qualified_string_needed = qualified_strings_needed[qualified_string_needed_key]
-                qualified_string_copy = copy.deepcopy(qualified_string_needed)
-                qualified_string_copy.text = filtered_response_strings[index]
-                print(
-                    f"...Adding {qualified_strings_needed[qualified_string_needed_key].text} -> {qualified_string_copy.text}")
-                qualified_strings_to_add.append(qualified_string_copy)
-                index += 1
-
-        # Now lets move onto modifying the XML file.
-        if len(qualified_strings_remove) > 0 or len(qualified_strings_needed) > 0:
-            qualified_strings_tree = ET.parse(qualified_strings_file_path)
-            qualified_strings_root = qualified_strings_tree.getroot()
-
-            # First lets remove the elements we dont need
-            for qualified_string_to_remove in qualified_strings_remove:
-                for qualified_string in qualified_strings_root:
-                    if qualified_string.attrib.get(XML_ATTR_NAME) == qualified_string_to_remove:
-                        qualified_strings_root.remove(qualified_string)
-
-            # Next lets add the elements we do want
-            for qualified_string in qualified_strings_to_add:
-                qualified_strings_root.append(qualified_string)
-
-            # Lastly, we write the changes to the file
-            print(f"...Writing changes to {str(qualified_strings_file_path)}")
-            qualified_strings_tree.write(
-                qualified_strings_file_path,
-                encoding="utf-8",
-                xml_declaration="utf-8",
-                method="xml"
-            )
         print(f"...Translations for {qualifier_language[qualifier]} completed")
         print("-------------------------------")
     print("Translation Script Complete!")
