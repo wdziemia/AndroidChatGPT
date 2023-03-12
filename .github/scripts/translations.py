@@ -80,7 +80,9 @@ def fetchOpenAI(strings_needed, language):
         "frequency_penalty": 0.5,
         "presence_penalty": 0,
     }
-    print(f"...Fetching {len(strings_needed)} {language} translation(s)")
+
+    if not config['quiet']:
+        print(f"...Fetching {len(strings_needed)} {language} translation(s)")
     json_response = requests.post(url, headers=headers, json=data)
     response_text = json_response.json()["choices"][0]["text"]
     response_strings = response_text.replace('\n\n', "").split('\n')
@@ -133,9 +135,11 @@ def insertStrings(strings_to_add, strings_needed):
     for qualified_string_needed_key in strings_needed:
         qualified_string_needed = strings_needed[qualified_string_needed_key]
         qualified_string_copy = copy.deepcopy(qualified_string_needed)
-        qualified_string_copy.text = strings_to_add[index].replace('\'', r'\'').replace("...", "&#8230;")
-        print(
-            f"...Adding {qualified_strings_needed[qualified_string_needed_key].text} -> {qualified_string_copy.text}")
+        qualified_string_copy.text = strings_to_add[index].replace('\'', r'\'').replace("...", "&#8230:")
+
+        if not config['quiet']:
+            print(
+                f"...Adding {qualified_strings_needed[qualified_string_needed_key].text} -> {qualified_string_copy.text}")
         qualified_strings_to_add.append(qualified_string_copy)
         index += 1
     # Now lets move onto modifying the XML file.
@@ -148,7 +152,8 @@ def insertStrings(strings_to_add, strings_needed):
             qualified_strings_root.append(qualified_string)
 
         # Lastly, we write the changes to the file
-        print(f"...Writing changes to {str(qualified_strings_file_path)}")
+        if not config['quiet']:
+            print(f"...Writing changes to {str(qualified_strings_file_path)}")
         qualified_strings_tree.write(
             qualified_strings_file_path,
             encoding="utf-8",
@@ -159,6 +164,7 @@ def insertStrings(strings_to_add, strings_needed):
 parser = argparse.ArgumentParser(description="Android String Translator",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("-r", "--root", help="root directory of the android app, or library")
+parser.add_argument("-q", "--quiet", action="store_true", help="decrease verbosity")
 parser.add_argument("-O", "--openai-key", help="OpenAI Key")
 parser.add_argument("-p", "--project_id", help="The Project Id for Google Translate")
 parser.add_argument("-g", "--google-translate", action="store_true", help="use Google Translate instead of OpenAI")
@@ -174,12 +180,14 @@ else:
 # Iterate through each source strings.xml file so the case where
 source_paths = pathlib.Path(rootDir).glob('**/src/*/res/values/strings.xml')
 
-print("Starting Translations Script!")
-print("-------------------------------")
+if not config['quiet']:
+    print("Starting Translations Script!")
+    print("-------------------------------")
 
 for source_path in source_paths:
     # Generate a map of source strings
-    print("Parsing " + str(source_path))
+    if not config['quiet']:
+        print("Parsing " + str(source_path))
     source_tree = ET.parse(source_path)
     source_strings = dict()
 
@@ -187,11 +195,13 @@ for source_path in source_paths:
     for child in source_tree.getroot():
         # Let's ignore the strings that are marked with translatable=false
         if child.attrib.get(XML_ATTR_TRANSLATABLE) == "false":
-            print(f"⚠️ Ignoring {child.attrib.get(XML_ATTR_NAME)} because it wasn't marked as translatable")
+            if not config['quiet']:
+                print(f"⚠️ Ignoring {child.attrib.get(XML_ATTR_NAME)} because it wasn't marked as translatable")
             continue
         source_strings[child.attrib.get(XML_ATTR_NAME)] = child
 
-    print("-------------------------------")
+    if not config['quiet']:
+        print("-------------------------------")
 
     # Next, we check to see if each language exists
     res_directory = source_path.parent.parent
@@ -212,7 +222,8 @@ for source_path in source_paths:
             for qualified_string in strings_tree.getroot():
                 # Let's ignore the strings that are marked with translatable=false
                 if qualified_string.attrib.get(XML_ATTR_TRANSLATABLE) == "false":
-                    print(f"...⚠️ Ignoring values-{qualifier}/{child.attrib.get(XML_ATTR_NAME)} because it wasn't marked as translatable")
+                    if not config['quiet']:
+                        print(f"...⚠️ Ignoring values-{qualifier}/{child.attrib.get(XML_ATTR_NAME)} because it wasn't marked as translatable")
                     continue
 
                 # Now we check to see if this qualified file has the translation
@@ -247,6 +258,8 @@ for source_path in source_paths:
                 if qualified_string.attrib.get(XML_ATTR_NAME) == qualified_string_to_remove:
                     qualified_strings_root.remove(qualified_string)
 
-        print(f"...Translations for {qualifier_language[qualifier]} completed")
-        print("-------------------------------")
-    print("Translation Script Complete!")
+        if not config['quiet']:
+            print(f"...Translations for {qualifier_language[qualifier]} completed")
+            print("-------------------------------")
+    if not config['quiet']:
+        print("Translation Script Complete!")
