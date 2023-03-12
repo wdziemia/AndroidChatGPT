@@ -1,16 +1,19 @@
+import argparse
 import pathlib
 import json
 import xml.etree.ElementTree as ET
 import os
 import copy
 import requests
+import re
 
 from xml.dom import minidom
 from itertools import islice
 
-# Env Args
-GITHUB_WORKSPACE = os.environ.get('GITHUB_WORKSPACE')
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+# if you don't want to import the dependencies and don't plan to use google translate
+# comment out the following line
+from google.cloud import translate
+
 
 # Parsing Args
 XML_ATTR_TRANSLATABLE = "translatable"
@@ -20,25 +23,33 @@ XML_ATTR_NAME = "name"
 qualifier_language = {
 #     "pl": "Polish",
 #     "en-rGB": "British English",
-    "uk": "Ukrainian",
     "ar": "Arabic",
     "bg": "Bulgarian",
+    "bn": "Bengali",
+    "ca": "Catalan",
+    "cs": "Czech",
     "da": "Danish",
     "de": "German",
     "el": "Greek",
     "es": "Spanish",
     "fi": "Finnish",
+    "fa": "Persian",
     "fr": "French",
+    "he": "Hebrew",
+    "hi": "Hindi",
     "hr": "Croatian",
     "it": "Italian",
     "ja": "Japanese",
     "ko": "Korean",
+    "nb": "Norwegian Bokmål",
     "nl": "Dutch",
     "pl": "Polish",
     "pt-rBR" : "Brazilian Portuguese",
     "pt-rPT": "Portuguese",
     "ro": "Romanian",
     "ru": "Russian",
+    "sv": "Swedish",
+    "uk": "Ukrainian",
     "tr": "Turkish",
     "zh": "Chinese"
 }
@@ -48,7 +59,7 @@ def chunks(data, SIZE=10000):
    for i in range(0, len(data), SIZE):
       yield {k:data[k] for k in islice(it, SIZE)}
 
-def tryChunk(strings_needed, language):
+def fetchOpenAI(strings_needed, language):
     # First we need our prompt, which will fetch a response for each language.
     prompt = "Translate each of these phrases, excluding punctuation unless present, into " + \
              language
@@ -73,9 +84,35 @@ def tryChunk(strings_needed, language):
     json_response = requests.post(url, headers=headers, json=data)
     response_text = json_response.json()["choices"][0]["text"]
     response_strings = response_text.replace('\n\n', "").split('\n')
+
+def fetchGoogleTranslate(strings_needed, language_code):
+    client = translate.TranslationServiceClient()
+    location = "global"
+    parent = f"projects/{PROJECT_ID}/locations/{location}"
+
+    request_strings = list(map(lambda x: x.text, strings_needed.values()))
+    request={
+                "parent": parent,
+                "contents": request_strings,
+                "mime_type": "text/plain",
+                "source_language_code": "en-US",
+                "target_language_code": language_code.replace("-r", "-"),  # pt-rBR -> pt-BR
+            }
+#    print(f"request={request}")
+    response = client.translate_text(
+        request=request
+    )
+
+#     print(f"response={response}")
+    return map(lambda x: x.translated_text, response.translations)
+
+def tryChunk(strings_needed, language, language_code):
+    if config['google_translate']:
+        response_strings = fetchGoogleTranslate(strings_needed, language_code)
+    else:
+        response_strings = fetchOpenAI(strings_needed, language)
     filtered_response_strings = list(filter(lambda string: len(string) > 0, response_strings))
     if len(filtered_response_strings) != len(strings_needed):
-        print(f"Miss, {len(filtered_response_strings)} != {len(strings_needed)}, found {json_response.json()}")
         if len(strings_needed) > 1:
            in1 = dict(list(strings_needed.items())[len(strings_needed)//2:])
            in2 = dict(list(strings_needed.items())[:len(strings_needed)//2])
@@ -85,19 +122,18 @@ def tryChunk(strings_needed, language):
         else:
             return filtered_response_strings
     else:
-        insertString(filtered_response_strings, strings_needed)
+        insertStrings(filtered_response_strings, strings_needed)
         return filtered_response_strings
 
 
-def insertString(strings_to_add, strings_needed):
-    print(f"{strings_to_add}, {strings_needed}")
+def insertStrings(strings_to_add, strings_needed):
     index = 0
     qualified_strings_to_add = list()
 
     for qualified_string_needed_key in strings_needed:
         qualified_string_needed = strings_needed[qualified_string_needed_key]
         qualified_string_copy = copy.deepcopy(qualified_string_needed)
-        qualified_string_copy.text = strings_to_add[index].replace('\'', r'\'')
+        qualified_string_copy.text = strings_to_add[index].replace('\'', r'\'').replace("...", "&#8230;")
         print(
             f"...Adding {qualified_strings_needed[qualified_string_needed_key].text} -> {qualified_string_copy.text}")
         qualified_strings_to_add.append(qualified_string_copy)
@@ -120,8 +156,23 @@ def insertString(strings_to_add, strings_needed):
             method="xml"
         )
 
+parser = argparse.ArgumentParser(description="Android String Translator",
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument("-r", "--root", help="root directory of the android app, or library")
+parser.add_argument("-O", "--openai-key", help="OpenAI Key")
+parser.add_argument("-p", "--project_id", help="The Project Id for Google Translate")
+parser.add_argument("-g", "--google-translate", action="store_true", help="use Google Translate instead of OpenAI")
+args = parser.parse_args()
+config = vars(args)
+
+rootDir = config['root'] if config['root'] != None else os.environ.get('GITHUB_WORKSPACE')
+if config['google_translate']:
+    PROJECT_ID = config['project_id'] if config['project_id'] != None else os.environ.get('GOOGLE_PROJECT_ID')
+else:
+    OPENAI_API_KEY = config['openai_key'] if config['openai_key'] != None else os.environ.get('OPENAI_API_KEY')
+
 # Iterate through each source strings.xml file so the case where
-source_paths = pathlib.Path(GITHUB_WORKSPACE).glob('**/src/*/res/values/strings.xml')
+source_paths = pathlib.Path(rootDir).glob('**/src/*/res/values/strings.xml')
 
 print("Starting Translations Script!")
 print("-------------------------------")
@@ -185,9 +236,12 @@ for source_path in source_paths:
         filtered_response_strings = list()
         if len(qualified_strings_needed) != 0:
             for chunk in chunks(qualified_strings_needed, 16):
-                tryChunk(chunk, qualifier_language[qualifier])
+                tryChunk(chunk, qualifier_language[qualifier], qualifier)
 
         # First lets remove the elements we don't need
+        qualified_strings_tree = ET.parse(qualified_strings_file_path)
+        qualified_strings_root = qualified_strings_tree.getroot()
+
         for qualified_string_to_remove in qualified_strings_remove:
             for qualified_string in qualified_strings_root:
                 if qualified_string.attrib.get(XML_ATTR_NAME) == qualified_string_to_remove:
