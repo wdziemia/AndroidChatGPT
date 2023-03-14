@@ -6,6 +6,7 @@ import os
 import copy
 import requests
 import re
+import pydoc
 
 from xml.dom import minidom
 from itertools import islice
@@ -35,10 +36,11 @@ qualifier_language = {
     "fi": "Finnish",
     "fa": "Persian",
     "fr": "French",
-    "he": "Hebrew",
     "hi": "Hindi",
     "hr": "Croatian",
+    "id": "Indonesian",
     "it": "Italian",
+    "iw": "Hebrew",
     "ja": "Japanese",
     "ko": "Korean",
     "nb": "Norwegian Bokmål",
@@ -49,117 +51,179 @@ qualifier_language = {
     "ro": "Romanian",
     "ru": "Russian",
     "sv": "Swedish",
-    "uk": "Ukrainian",
     "tr": "Turkish",
+    "uk": "Ukrainian",
+    "ur": "Urdu",
     "zh": "Chinese"
 }
 
+class Translator:
+    """
+        Class Translator 
+        This is the base class for OpenAI and Google Translator with common methods. 
+    """
+
+    def fetch(self, strings_needed, language, language_code):
+        """
+            fetch is implemented by OpenAI and Google Translator class.
+
+            :param strings_needed: The strings to be fetched
+            :param language: The language name for the langauge to fetch
+            :param language_code: The language code for the langauge to fetch
+        """
+        pass
+
+    def try_chunk(self, strings_needed, language, language_code):
+        """
+            try_chunk tries to fetch a chunk of strings for one language.
+            It'll divide the chunk in two if its chunk fails.
+
+            btw, for OpenAI we often have to divide the chunk.
+            with Google Translation, it never happens.
+
+            :param strings_needed: The strings to be fetched
+            :param language: The language name for the langauge to fetch
+            :param language_code: The language code for the langauge to fetch
+            :return: the list of strings fetched
+
+        """
+        response_strings = translator.fetch(strings_needed, language, language_code)
+
+        filtered_response_strings = list(filter(lambda string: len(string) > 0, response_strings))
+        if len(filtered_response_strings) != len(strings_needed):
+            if len(strings_needed) > 1:
+                in1 = dict(list(strings_needed.items())[len(strings_needed)//2:])
+                in2 = dict(list(strings_needed.items())[:len(strings_needed)//2])
+                out1 = self.try_chunk(in1, language, language_code)
+                out2 = self.try_chunk(in2, language, language_code)
+                return out1 + out2
+            else:
+                return filtered_response_strings
+        else:
+            self.insert_strings(filtered_response_strings, strings_needed)
+            return filtered_response_strings
+
+
+    def insert_strings(self, strings_to_add, strings_needed):
+        """
+            insert_strings inserts a set of strings 
+
+            :param strings_to_add: The strings we fetched, that'll be inserted.
+            :param strings_needed: The strings that were needed
+            :return: returns nothing
+        """
+
+        index = 0
+        qualified_strings_to_add = list()
+
+        for qualified_string_needed_key in strings_needed:
+            qualified_string_needed = strings_needed[qualified_string_needed_key]
+            qualified_string_copy = copy.deepcopy(qualified_string_needed)
+            qualified_string_copy.text = strings_to_add[index].replace('\'', r'\'').replace("...", "&#8230:")
+
+            if not config['quiet']:
+                print(
+                    f"...Adding {qualified_strings_needed[qualified_string_needed_key].text} -> {qualified_string_copy.text}")
+            qualified_strings_to_add.append(qualified_string_copy)
+            index += 1
+
+        # Now lets move onto modifying the XML file.
+        if len(strings_needed) > 0:
+            qualified_strings_tree = ET.parse(qualified_strings_file_path)
+            qualified_strings_root = qualified_strings_tree.getroot()
+
+            # Next lets add the elements we do want
+            for qualified_string in qualified_strings_to_add:
+                qualified_strings_root.append(qualified_string)
+
+            # Lastly, we write the changes to the file
+            if not config['quiet']:
+                print(f"...Writing changes to {str(qualified_strings_file_path)}")
+            qualified_strings_tree.write(
+                qualified_strings_file_path,
+                encoding="utf-8",
+                xml_declaration="utf-8",
+                method="xml"
+            )
+
+class GoogleTranslate (Translator):
+    """
+        Class GoogleTranslate implement Translator::fetch to fetch translations from Google Translation
+    """
+
+    def __init__(self, project_id) -> None:
+        """
+        Construct a new 'GoogleTranslate' object.
+
+        :project_id: The project id of Google Cloud project
+        :return: returns nothing
+        """
+        super().__init__()
+        self.project_id = project_id
+        self.client = translate.TranslationServiceClient()
+        location = "global"
+        self.parent = f"projects/{PROJECT_ID}/locations/{location}"
+
+
+    def fetch(self, strings_needed, language, language_code):
+
+        request_strings = list(map(lambda x: x.text, strings_needed.values()))
+        request={
+                    "parent": self.parent,
+                    "contents": request_strings,
+                    "mime_type": "text/plain",
+                    "source_language_code": "en-US",
+                    "target_language_code": language_code.replace("-r", "-"),  # pt-rBR -> pt-BR
+                }
+    #    print(f"request={request}")
+        response = self.client.translate_text(
+            request=request
+        )
+
+    #     print(f"response={response}")
+        return map(lambda x: x.translated_text, response.translations)
+
+class OpenAITranslator (Translator):
+    """
+        Class OpenAITranslator implement Translator::fetch to fetch translations from OpenAI (ChatGPT)
+    """
+
+    def __init__(self, api_key) -> None:
+        super().__init__()
+        self.url = "https://api.openai.com/v1/completions"
+        self.headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "Authorization": "Bearer " + api_key,
+        }
+
+    def fetch(self, strings_needed, language, language_code):
+            # First we need our prompt, which will fetch a response for each language.
+        prompt = "Translate each of these phrases, excluding punctuation unless present, into " + \
+                language + "\n" +  "\n".join([x.text for x in strings_needed.values()])        
+
+        data = {
+            "model": "text-davinci-003",
+            "prompt": prompt,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "top_p": 1,
+            "frequency_penalty": 0.5,
+            "presence_penalty": 0,
+        }
+
+        if not config['quiet']:
+            print(f"...Fetching {len(strings_needed)} {language} translation(s)")
+        json_response = requests.post(self.url, headers=self.headers, json=data)
+        response_text = json_response.json()["choices"][0]["text"]
+        response_strings = response_text.replace('\n\n', "").split('\n')
+        return response_strings
+
+    
 def chunks(data, SIZE=10000):
    it = iter(data)
    for i in range(0, len(data), SIZE):
       yield {k:data[k] for k in islice(it, SIZE)}
 
-def fetchOpenAI(strings_needed, language):
-    # First we need our prompt, which will fetch a response for each language.
-    prompt = "Translate each of these phrases, excluding punctuation unless present, into " + \
-             language
-    for qualified_string_needed_key in strings_needed:
-        prompt += "\n" + strings_needed[qualified_string_needed_key].text
-
-    url = "https://api.openai.com/v1/completions"
-    headers = {
-        "Content-Type": "application/json; charset=utf-8",
-        "Authorization": "Bearer " + OPENAI_API_KEY,
-    }
-    data = {
-        "model": "text-davinci-003",
-        "prompt": prompt,
-        "temperature": 0,
-        "max_tokens": 1024,
-        "top_p": 1,
-        "frequency_penalty": 0.5,
-        "presence_penalty": 0,
-    }
-
-    if not config['quiet']:
-        print(f"...Fetching {len(strings_needed)} {language} translation(s)")
-    json_response = requests.post(url, headers=headers, json=data)
-    response_text = json_response.json()["choices"][0]["text"]
-    response_strings = response_text.replace('\n\n', "").split('\n')
-
-def fetchGoogleTranslate(strings_needed, language_code):
-    client = translate.TranslationServiceClient()
-    location = "global"
-    parent = f"projects/{PROJECT_ID}/locations/{location}"
-
-    request_strings = list(map(lambda x: x.text, strings_needed.values()))
-    request={
-                "parent": parent,
-                "contents": request_strings,
-                "mime_type": "text/plain",
-                "source_language_code": "en-US",
-                "target_language_code": language_code.replace("-r", "-"),  # pt-rBR -> pt-BR
-            }
-#    print(f"request={request}")
-    response = client.translate_text(
-        request=request
-    )
-
-#     print(f"response={response}")
-    return map(lambda x: x.translated_text, response.translations)
-
-def tryChunk(strings_needed, language, language_code):
-    if config['google_translate']:
-        response_strings = fetchGoogleTranslate(strings_needed, language_code)
-    else:
-        response_strings = fetchOpenAI(strings_needed, language)
-    filtered_response_strings = list(filter(lambda string: len(string) > 0, response_strings))
-    if len(filtered_response_strings) != len(strings_needed):
-        if len(strings_needed) > 1:
-           in1 = dict(list(strings_needed.items())[len(strings_needed)//2:])
-           in2 = dict(list(strings_needed.items())[:len(strings_needed)//2])
-           out1 = tryChunk(in1, language)
-           out2 = tryChunk(in2, language)
-           return out1 + out2
-        else:
-            return filtered_response_strings
-    else:
-        insertStrings(filtered_response_strings, strings_needed)
-        return filtered_response_strings
-
-
-def insertStrings(strings_to_add, strings_needed):
-    index = 0
-    qualified_strings_to_add = list()
-
-    for qualified_string_needed_key in strings_needed:
-        qualified_string_needed = strings_needed[qualified_string_needed_key]
-        qualified_string_copy = copy.deepcopy(qualified_string_needed)
-        qualified_string_copy.text = strings_to_add[index].replace('\'', r'\'').replace("...", "&#8230:")
-
-        if not config['quiet']:
-            print(
-                f"...Adding {qualified_strings_needed[qualified_string_needed_key].text} -> {qualified_string_copy.text}")
-        qualified_strings_to_add.append(qualified_string_copy)
-        index += 1
-    # Now lets move onto modifying the XML file.
-    if len(strings_needed) > 0:
-        qualified_strings_tree = ET.parse(qualified_strings_file_path)
-        qualified_strings_root = qualified_strings_tree.getroot()
-
-        # Next lets add the elements we do want
-        for qualified_string in qualified_strings_to_add:
-            qualified_strings_root.append(qualified_string)
-
-        # Lastly, we write the changes to the file
-        if not config['quiet']:
-            print(f"...Writing changes to {str(qualified_strings_file_path)}")
-        qualified_strings_tree.write(
-            qualified_strings_file_path,
-            encoding="utf-8",
-            xml_declaration="utf-8",
-            method="xml"
-        )
 
 parser = argparse.ArgumentParser(description="Android String Translator",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -177,6 +241,7 @@ if config['google_translate']:
 else:
     OPENAI_API_KEY = config['openai_key'] if config['openai_key'] != None else os.environ.get('OPENAI_API_KEY')
 
+translator = GoogleTranslate(PROJECT_ID) if config['google_translate'] else OpenAITranslator(OPENAI_API_KEY)
 # Iterate through each source strings.xml file so the case where
 source_paths = pathlib.Path(rootDir).glob('**/src/*/res/values/strings.xml')
 
@@ -206,7 +271,7 @@ for source_path in source_paths:
     # Next, we check to see if each language exists
     res_directory = source_path.parent.parent
     for qualifier in qualifier_language.keys():
-        qualified_values_folder_name = 'values-{qualifier}'.format(qualifier=qualifier)
+        qualified_values_folder_name = f"values-{qualifier}"
         qualified_values_folder_path = os.path.join(res_directory, qualified_values_folder_name)
         qualified_values_folder_exists = os.path.exists(qualified_values_folder_path)
         qualified_strings_file_path = os.path.join(qualified_values_folder_path, "strings.xml")
@@ -247,7 +312,7 @@ for source_path in source_paths:
         filtered_response_strings = list()
         if len(qualified_strings_needed) != 0:
             for chunk in chunks(qualified_strings_needed, 16):
-                tryChunk(chunk, qualifier_language[qualifier], qualifier)
+                translator.try_chunk(chunk, qualifier_language[qualifier], qualifier)
 
         # First lets remove the elements we don't need
         qualified_strings_tree = ET.parse(qualified_strings_file_path)
