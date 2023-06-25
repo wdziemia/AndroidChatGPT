@@ -38,7 +38,7 @@ qualifier_language = {
     "fr": "French",
     "hi": "Hindi",
     "hr": "Croatian",
-    "id": "Indonesian",
+    "in": "Indonesian",
     "it": "Italian",
     "iw": "Hebrew",
     "ja": "Japanese",
@@ -120,6 +120,11 @@ class Translator:
             qualified_string_needed = strings_needed[qualified_string_needed_key]
             qualified_string_copy = copy.deepcopy(qualified_string_needed)
             qualified_string_copy.text = strings_to_add[index].replace('\'', r'\'').replace("...", "&#8230:")
+
+            # Arabic strings are coming back with some unicode % and added spaces in placeholders
+            # Look for that pattern, and fix it.
+            pattern = re.compile(r'٪\s+(\d)\s+\$\s+(\w)')
+            qualified_string_copy.text = re.sub(pattern, r'%\1$\2', qualified_string_copy.text)
 
             if not config['quiet']:
                 print(
